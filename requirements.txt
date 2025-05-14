@@ -1,0 +1,6 @@
+flask==3.0.2
+requests==2.31.0
+python-dotenv==1.0.1
+flask-limiter==3.5.0
+pillow==10.3.0
+TikTokApi==5.2.2
