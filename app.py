@@ -608,7 +608,7 @@ def status_page():
     if not uptime_cache['last_check']:
         uptime_cache['last_check'] = datetime.now().isoformat()
     
-    return """
+    status_html = """
     <!DOCTYPE html>
     <html>
     <head>
@@ -735,6 +735,7 @@ def status_page():
         requests_served=uptime_cache.get('requests_served', 0),
         server_time=datetime.now().isoformat()
     )
+    return status_html
 
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=5000, debug=True)
