@@ -11,6 +11,7 @@ from dotenv import load_dotenv
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from TikTokApi import TikTokApi
+from functools import wraps
 
 # Configure logging
 logging.basicConfig(
@@ -23,6 +24,13 @@ load_dotenv()
 
 app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "dev-secret-key")
+
+# Cache for uptime checks
+uptime_cache = {
+    'last_check': None,
+    'status': 'online',
+    'requests_served': 0
+}
 
 # Cookie management
 class CookieManager:
@@ -68,11 +76,23 @@ class CookieManager:
 
 cookie_manager = CookieManager()
 
-# Rate limiting configuration
+# Rate limiting configuration - modified to exclude uptime checks
+def limit_exempt_uptime():
+    def decorator(f):
+        @wraps(f)
+        def wrapped(*args, **kwargs):
+            if request.path == '/uptime':
+                return f(*args, **kwargs)
+            return limiter.limit("5 per minute")(f)(*args, **kwargs)
+        return wrapped
+    return decorator
+
 limiter = Limiter(
     app=app,
     key_func=get_remote_address,
-    default_limits=["100 per day", "20 per hour"]
+    default_limits=["100 per day", "20 per hour"],
+    storage_uri="memory://",
+    strategy="fixed-window"  # More predictable for uptime checks
 )
 
 def get_instagram_headers():
@@ -352,7 +372,7 @@ def fetch_user_posts(user_id, debug_info):
     return {"count": len(post_items), "items": post_items}
 
 @app.route('/api/instagram/<username>')
-@limiter.limit("5 per minute")
+@limit_exempt_uptime()
 def api_instagram(username):
     username = username.strip()
     if not username:
@@ -519,7 +539,7 @@ def get_tiktok_video_id(url):
         raise ValueError(f"Could not extract video ID: {str(e)}")
 
 @app.route('/api/tkdl/<path:video_url>')
-@limiter.limit("5 per minute")
+@limit_exempt_uptime()
 def download_tiktok(video_url):
     """
     API endpoint to download TikTok videos.
@@ -569,30 +589,50 @@ def download_tiktok(video_url):
             "status": "failed"
         }), 500
 
+@app.route('/uptime')
+def uptime_check():
+    """Special endpoint for uptime checks that doesn't count against rate limits"""
+    uptime_cache['last_check'] = datetime.now().isoformat()
+    uptime_cache['requests_served'] = uptime_cache.get('requests_served', 0) + 1
+    return jsonify({
+        "status": "online",
+        "last_check": uptime_cache['last_check'],
+        "requests_served": uptime_cache['requests_served'],
+        "server_time": datetime.now().isoformat()
+    }), 200
+
 @app.route('/')
-def uptime_status():
-    """Simple uptime status page for monitoring"""
+def status_page():
+    """Enhanced status page with more information"""
+    # Update cache if this is a fresh request
+    if not uptime_cache['last_check']:
+        uptime_cache['last_check'] = datetime.now().isoformat()
+    
     return """
     <!DOCTYPE html>
     <html>
     <head>
         <title>JihyoIG Status</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
         <style>
             body {
                 font-family: Arial, sans-serif;
                 display: flex;
                 justify-content: center;
                 align-items: center;
-                height: 100vh;
+                min-height: 100vh;
                 margin: 0;
                 background-color: #f0f2f5;
+                color: #333;
             }
             .status-container {
                 text-align: center;
                 padding: 2rem;
                 background-color: white;
                 border-radius: 8px;
-                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+                max-width: 600px;
+                width: 90%;
             }
             .status-indicator {
                 width: 20px;
@@ -605,37 +645,96 @@ def uptime_status():
             }
             @keyframes pulse {
                 0% { opacity: 1; }
-                50% { opacity: 0.5; }
+                50% { opacity: 0.7; }
                 100% { opacity: 1; }
             }
             h1 {
                 color: #1a1a1a;
-                margin: 0;
+                margin: 0 0 1rem 0;
                 font-size: 24px;
             }
-            p {
-                color: #666;
-                margin: 10px 0 0 0;
+            .status-info {
+                text-align: left;
+                margin: 1.5rem 0;
+                padding: 1rem;
+                background: #f8f9fa;
+                border-radius: 6px;
+            }
+            .status-info p {
+                margin: 0.5rem 0;
+                font-size: 14px;
+            }
+            .status-info strong {
+                display: inline-block;
+                width: 120px;
+            }
+            .uptime-link {
+                display: inline-block;
+                margin-top: 1rem;
+                padding: 0.5rem 1rem;
+                background: #4CAF50;
+                color: white;
+                text-decoration: none;
+                border-radius: 4px;
+                font-size: 14px;
+            }
+            .uptime-link:hover {
+                background: #3e8e41;
             }
         </style>
     </head>
     <body>
         <div class="status-container">
             <span class="status-indicator"></span>
-            <h1>JihyoIG is Online</h1>
-            <p>Last checked: <span id="timestamp"></span></p>
+            <h1>JihyoIG Service Status</h1>
+            
+            <div class="status-info">
+                <p><strong>Current Status:</strong> <span id="status">Online</span></p>
+                <p><strong>Last Check:</strong> <span id="last-check">{last_check}</span></p>
+                <p><strong>Requests Served:</strong> <span id="requests-served">{requests_served}</span></p>
+                <p><strong>Server Time:</strong> <span id="server-time">{server_time}</span></p>
+            </div>
+            
+            <p>For uptime monitoring, use the dedicated endpoint below</p>
+            <a href="/uptime" class="uptime-link">Uptime Check Endpoint</a>
         </div>
+        
         <script>
             function updateTimestamp() {
                 const now = new Date();
-                document.getElementById('timestamp').textContent = now.toLocaleString();
+                document.getElementById('server-time').textContent = now.toLocaleString();
             }
+            
+            // Initial update
             updateTimestamp();
+            
+            // Update every second
             setInterval(updateTimestamp, 1000);
+            
+            // Update status from uptime endpoint periodically
+            function checkStatus() {
+                fetch('/uptime')
+                    .then(response => response.json())
+                    .then(data => {
+                        document.getElementById('last-check').textContent = data.last_check;
+                        document.getElementById('requests-served').textContent = data.requests_served;
+                    })
+                    .catch(error => {
+                        console.error('Status check failed:', error);
+                    });
+            }
+            
+            // Check every 30 seconds
+            setInterval(checkStatus, 30000);
+            checkStatus(); // Initial check
         </script>
     </body>
     </html>
-    """
+    """.format(
+        last_check=uptime_cache['last_check'],
+        requests_served=uptime_cache.get('requests_served', 0),
+        server_time=datetime.now().isoformat()
+    )
 
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=5000, debug=True)
