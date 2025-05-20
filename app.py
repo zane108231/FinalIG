@@ -37,8 +37,6 @@ class CookieManager:
     def __init__(self):
         self.cookies = []
         self.current_index = 0
-        self.last_rotation = datetime.now()
-        self.rotation_interval = timedelta(minutes=30)  # Rotate every 30 minutes
         self.load_cookies()
         logger.info(f"CookieManager initialized with {len(self.cookies)} cookies")
 
@@ -52,19 +50,14 @@ class CookieManager:
             logger.warning("No Instagram cookies found in environment variables")
 
     def get_current_cookie(self):
-        current_time = datetime.now()
-        if current_time - self.last_rotation > self.rotation_interval:
-            logger.info("Rotation interval reached, rotating cookie")
-            self.rotate_cookie()
-        current_cookie = self.cookies[self.current_index] if self.cookies else ""
-        logger.info(f"Using cookie index {self.current_index} (Total cookies: {len(self.cookies)})")
-        return current_cookie
+        if not self.cookies:
+            return ""
+        return self.cookies[self.current_index]
 
     def rotate_cookie(self):
         if len(self.cookies) > 1:
             old_index = self.current_index
             self.current_index = (self.current_index + 1) % len(self.cookies)
-            self.last_rotation = datetime.now()
             logger.info(f"Rotated cookie: {old_index} -> {self.current_index} (Total cookies: {len(self.cookies)})")
         else:
             logger.warning("Cannot rotate cookie: only one cookie available")
@@ -125,25 +118,21 @@ def handle_instagram_response(response):
             except json.JSONDecodeError:
                 logger.warning(f"Invalid JSON response (Status: {response.status_code}), likely invalid cookie")
                 logger.debug(f"Response content: {response.text[:200]}...")  # Log first 200 chars of response
-                cookie_manager.rotate_cookie()
                 return False, "Invalid cookie or session expired"
         
         # Check for rate limiting
         if response.status_code == 429:
             logger.warning(f"Rate limit hit (Status: {response.status_code})")
-            cookie_manager.rotate_cookie()
             return False, "Rate limit exceeded"
         
         # Check for access denied
         if response.status_code == 403:
             logger.warning(f"Access forbidden (Status: {response.status_code})")
-            cookie_manager.rotate_cookie()
             return False, "Access forbidden"
         
         # Check for login required
         if response.status_code == 401:
             logger.warning(f"Authentication required (Status: {response.status_code})")
-            cookie_manager.rotate_cookie()
             return False, "Authentication required"
         
         # Check response content for challenge indicators
@@ -162,7 +151,6 @@ def handle_instagram_response(response):
             if found_indicators:
                 logger.warning(f"Challenge detected in response: {', '.join(found_indicators)}")
                 logger.debug(f"Response content: {response_text[:200]}...")  # Log first 200 chars
-                cookie_manager.rotate_cookie()
                 return False, f"Challenge required: {', '.join(found_indicators)}"
         except Exception as e:
             logger.error(f"Error checking response content: {str(e)}")
@@ -171,16 +159,19 @@ def handle_instagram_response(response):
         
     except Exception as e:
         logger.error(f"Error handling response: {str(e)}")
-        cookie_manager.rotate_cookie()
         return False, str(e)
 
 def make_instagram_request(url, method="GET", **kwargs):
     """Make a request to Instagram with retry logic and rate limiting"""
-    max_retries = 3
+    max_retries = len(cookie_manager.cookies) if cookie_manager.cookies else 1
     base_delay = 2
     
     for attempt in range(max_retries):
         try:
+            # Rotate cookie before each attempt
+            if attempt > 0:
+                cookie_manager.rotate_cookie()
+            
             # Add random delay between requests
             delay = base_delay + random.uniform(0, 2)
             logger.debug(f"Request attempt {attempt + 1}/{max_retries} - Waiting {delay:.2f}s")
@@ -336,7 +327,11 @@ def fetch_user_posts(user_id, debug_info):
                 current_url += f"&max_id={max_id}"
             
             debug_info["stats"]["api_calls"] += 1
-            posts_res = requests.get(current_url, headers=get_instagram_headers(), timeout=15)
+            posts_res = make_instagram_request(current_url)
+            if isinstance(posts_res, str):
+                debug_info["errors"].append(f"Failed to fetch posts: {posts_res}")
+                break
+                
             posts_data = posts_res.json()
             
             if not posts_data.get("items"):
@@ -398,8 +393,10 @@ def api_instagram(username):
         # Get profile data
         debug_info["stats"]["api_calls"] += 1
         user_url = f"https://www.instagram.com/api/v1/users/web_profile_info/?username={username}"
-        res = requests.get(user_url, headers=get_instagram_headers(), timeout=15)
-        res.raise_for_status()
+        res = make_instagram_request(user_url)
+        if isinstance(res, str):
+            return jsonify({"error": res, "debug": debug_info}), 500
+            
         user_data = res.json().get("data", {}).get("user", {})
         
         if not user_data:
@@ -435,8 +432,12 @@ def api_instagram(username):
         # Get stories
         debug_info["stats"]["api_calls"] += 1
         stories_url = f"https://i.instagram.com/api/v1/feed/user/{user_id}/reel_media/"
-        stories_res = requests.get(stories_url, headers=get_instagram_headers(), timeout=10)
-        stories = stories_res.json().get("items", [])
+        stories_res = make_instagram_request(stories_url)
+        if isinstance(stories_res, str):
+            debug_info["errors"].append(f"Failed to fetch stories: {stories_res}")
+            stories = []
+        else:
+            stories = stories_res.json().get("items", [])
         
         story_items = []
         for story in stories:
