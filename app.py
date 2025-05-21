@@ -81,6 +81,16 @@ class CookieManager:
                 return True
         return False
 
+    def remove_cookie(self, index):
+        if 0 <= index < len(self.cookies):
+            removed_name = self.cookie_names.pop(index)
+            removed_cookie = self.cookies.pop(index)
+            if self.current_index >= index and self.current_index > 0:
+                self.current_index -= 1
+            logger.info(f"Removed cookie '{removed_name}' at index {index}")
+            return True
+        return False
+
 cookie_manager = CookieManager()
 
 # Rate limiting configuration - modified to exclude uptime checks
@@ -557,30 +567,47 @@ def api_instagram(username):
 @app.route("/cookies", methods=["GET", "POST"])
 def cookie_management():
     if request.method == "POST":
-        cookie_name = request.form.get("name", "").strip()
-        new_cookie = request.form.get("cookie", "").strip()
+        action = request.form.get("action")
         
-        if new_cookie:
-            # Verify the cookie before adding
-            headers = {
-                "User-Agent": os.getenv("INSTAGRAM_USER_AGENT", "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1"),
-                "Cookie": new_cookie
-            }
-            try:
-                # Test the cookie with a simple request
-                test_url = "https://www.instagram.com/api/v1/users/web_profile_info/?username=instagram"
-                response = requests.get(test_url, headers=headers, timeout=10)
-                if response.status_code == 200:
-                    if cookie_manager.add_cookie(cookie_name, new_cookie):
-                        flash(f"Cookie '{cookie_name}' added successfully and verified!", "success")
+        if action == "add":
+            cookie_name = request.form.get("name", "").strip()
+            new_cookie = request.form.get("cookie", "").strip()
+            
+            if new_cookie:
+                # Verify the cookie before adding
+                headers = {
+                    "User-Agent": os.getenv("INSTAGRAM_USER_AGENT", "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1"),
+                    "Cookie": new_cookie
+                }
+                try:
+                    # Test the cookie with a simple request
+                    test_url = "https://www.instagram.com/api/v1/users/web_profile_info/?username=instagram"
+                    response = requests.get(test_url, headers=headers, timeout=10)
+                    if response.status_code == 200:
+                        if cookie_manager.add_cookie(cookie_name, new_cookie):
+                            flash(f"Cookie '{cookie_name}' added successfully and verified!", "success")
+                        else:
+                            flash("Cookie already exists", "warning")
                     else:
-                        flash("Cookie already exists", "warning")
+                        flash(f"Cookie verification failed (Status: {response.status_code})", "error")
+                except Exception as e:
+                    flash(f"Cookie verification failed: {str(e)}", "error")
+            else:
+                flash("No cookie provided", "error")
+        
+        elif action == "remove":
+            try:
+                index = int(request.form.get("index"))
+                if cookie_manager.remove_cookie(index):
+                    flash("Cookie removed successfully", "success")
                 else:
-                    flash(f"Cookie verification failed (Status: {response.status_code})", "error")
-            except Exception as e:
-                flash(f"Cookie verification failed: {str(e)}", "error")
-        else:
-            flash("No cookie provided", "error")
+                    flash("Invalid cookie index", "error")
+            except (ValueError, TypeError):
+                flash("Invalid index provided", "error")
+        
+        elif action == "rotate":
+            cookie_manager.rotate_cookie()
+            flash("Cookie rotated successfully", "success")
     
     # Get all cookies with their status
     cookies_info = []
