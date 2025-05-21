@@ -1,31 +1,122 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+    <meta charset="UTF-8">
     <title>Cookie Management</title>
     <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f9f9f9;
+            color: #333;
+            margin: 0;
+            padding: 20px;
+        }
+
+        h1, h2 {
+            color: #2c3e50;
+        }
+
+        .flashes .alert {
+            padding: 10px 15px;
+            margin-bottom: 10px;
+            border-radius: 5px;
+        }
+
+        .alert-success {
+            background-color: #d4edda;
+            color: #155724;
+        }
+
+        .alert-error {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+
         table {
             width: 100%;
             border-collapse: collapse;
+            margin-top: 20px;
+            background-color: #fff;
+            box-shadow: 0 0 5px rgba(0,0,0,0.05);
         }
+
         th, td {
-            border: 1px solid #ddd;
-            padding: 8px;
+            border: 1px solid #e0e0e0;
+            padding: 12px;
             text-align: left;
         }
+
         th {
-            background-color: #f2f2f2;
+            background-color: #f1f1f1;
+            font-weight: bold;
         }
+
+        tr:hover {
+            background-color: #f9f9f9;
+        }
+
         .active {
-            background-color: #d4edda;
+            background-color: #e6ffed !important;
         }
+
         .actions {
             white-space: nowrap;
+        }
+
+        button {
+            padding: 6px 12px;
+            margin: 2px;
+            border: none;
+            border-radius: 4px;
+            background-color: #3498db;
+            color: white;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        button:hover {
+            background-color: #2980b9;
+        }
+
+        form {
+            margin-top: 20px;
+        }
+
+        form div {
+            margin-bottom: 10px;
+        }
+
+        label {
+            display: block;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        input[type="text"],
+        textarea {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        textarea {
+            resize: vertical;
+        }
+
+        .section {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+            margin-top: 20px;
         }
     </style>
 </head>
 <body>
     <h1>Cookie Management</h1>
-    
+
     {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}
             <div class="flashes">
@@ -35,58 +126,64 @@
             </div>
         {% endif %}
     {% endwith %}
-    
-    <h2>Current Cookies ({{ cookie_count }})</h2>
-    <p>Active cookie index: {{ current_index }}</p>
-    
-    <table>
-        <thead>
-            <tr>
-                <th>Index</th>
-                <th>Name</th>
-                <th>Cookie</th>
-                <th>Status</th>
-                <th>Actions</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for cookie in cookies_info %}
-                <tr {% if cookie.is_active %}class="active"{% endif %}>
-                    <td>{{ cookie.index }}</td>
-                    <td>{{ cookie.name }}</td>
-                    <td>{{ cookie.cookie }}</td>
-                    <td>{% if cookie.is_active %}ACTIVE{% endif %}</td>
-                    <td class="actions">
-                        <form method="post" style="display: inline;">
-                            <input type="hidden" name="action" value="remove">
-                            <input type="hidden" name="index" value="{{ cookie.index }}">
-                            <button type="submit">Remove</button>
-                        </form>
-                        <button onclick="alert('{{ cookie.full_cookie }}')">Show Full</button>
-                    </td>
+
+    <div class="section">
+        <h2>Current Cookies ({{ cookie_count }})</h2>
+        <p>Active cookie index: <strong>{{ current_index }}</strong></p>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Index</th>
+                    <th>Name</th>
+                    <th>Cookie</th>
+                    <th>Status</th>
+                    <th>Actions</th>
                 </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-    
-    <h2>Add New Cookie</h2>
-    <form method="post">
-        <input type="hidden" name="action" value="add">
-        <div>
-            <label for="name">Cookie Name:</label>
-            <input type="text" id="name" name="name" placeholder="Optional name for this cookie">
-        </div>
-        <div>
-            <label for="cookie">Cookie Value:</label>
-            <textarea id="cookie" name="cookie" rows="4" cols="50" required></textarea>
-        </div>
-        <button type="submit">Add Cookie</button>
-    </form>
-    
-    <h2>Actions</h2>
-    <form method="post">
-        <input type="hidden" name="action" value="rotate">
-        <button type="submit">Rotate to Next Cookie</button>
-    </form>
+            </thead>
+            <tbody>
+                {% for cookie in cookies_info %}
+                    <tr {% if cookie.is_active %}class="active"{% endif %}>
+                        <td>{{ cookie.index }}</td>
+                        <td>{{ cookie.name }}</td>
+                        <td>{{ cookie.cookie }}</td>
+                        <td>{% if cookie.is_active %}<strong>ACTIVE</strong>{% endif %}</td>
+                        <td class="actions">
+                            <form method="post" style="display: inline;">
+                                <input type="hidden" name="action" value="remove">
+                                <input type="hidden" name="index" value="{{ cookie.index }}">
+                                <button type="submit" style="background-color: #e74c3c;">Remove</button>
+                            </form>
+                            <button onclick="alert('{{ cookie.full_cookie }}')" style="background-color: #2ecc71;">Show Full</button>
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="section">
+        <h2>Add New Cookie</h2>
+        <form method="post">
+            <input type="hidden" name="action" value="add">
+            <div>
+                <label for="name">Cookie Name:</label>
+                <input type="text" id="name" name="name" placeholder="Optional name for this cookie">
+            </div>
+            <div>
+                <label for="cookie">Cookie Value:</label>
+                <textarea id="cookie" name="cookie" rows="4" required placeholder="Paste cookie value here..."></textarea>
+            </div>
+            <button type="submit" style="background-color: #27ae60;">Add Cookie</button>
+        </form>
+    </div>
+
+    <div class="section">
+        <h2>Actions</h2>
+        <form method="post">
+            <input type="hidden" name="action" value="rotate">
+            <button type="submit" style="background-color: #8e44ad;">Rotate to Next Cookie</button>
+        </form>
+    </div>
 </body>
 </html>
