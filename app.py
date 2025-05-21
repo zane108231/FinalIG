@@ -108,50 +108,50 @@ def home():
     uptime_cache['last_check'] = datetime.now().isoformat()
     uptime_cache['requests_served'] = uptime_cache.get('requests_served', 0) + 1
     
-    return """
+    return f"""
     <!DOCTYPE html>
     <html>
     <head>
         <title>Service Status</title>
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <style>
-            body {
+            body {{
                 font-family: Arial, sans-serif;
                 text-align: center;
                 padding: 50px;
                 background-color: #f5f5f5;
-            }
-            .container {
+            }}
+            .container {{
                 background-color: white;
                 padding: 30px;
                 border-radius: 10px;
                 box-shadow: 0 0 10px rgba(0,0,0,0.1);
                 display: inline-block;
-            }
-            h1 {
+            }}
+            h1 {{
                 color: #333;
-            }
-            .status {
+            }}
+            .status {{
                 font-size: 24px;
                 margin: 20px 0;
                 padding: 10px;
                 border-radius: 5px;
                 background-color: #4CAF50;
                 color: white;
-            }
-            .info {
+            }}
+            .info {{
                 margin: 10px 0;
                 color: #666;
-            }
+            }}
         </style>
     </head>
     <body>
         <div class="container">
             <h1>Service Status</h1>
             <div class="status">ONLINE</div>
-            <div class="info">Last check: {}</div>
-            <div class="info">Requests served: {}</div>
-            <div class="info">Server time: {}</div>
+            <div class="info">Last check: {uptime_cache['last_check']}</div>
+            <div class="info">Requests served: {uptime_cache['requests_served']}</div>
+            <div class="info">Server time: {datetime.now().isoformat()}</div>
         </div>
     </body>
     </html>
