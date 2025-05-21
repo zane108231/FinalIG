@@ -107,7 +107,7 @@ def home():
     """Simple uptime page for monitoring"""
     uptime_cache['last_check'] = datetime.now().isoformat()
     uptime_cache['requests_served'] = uptime_cache.get('requests_served', 0) + 1
-    
+
     html_content = """
     <!DOCTYPE html>
     <html>
@@ -115,34 +115,34 @@ def home():
         <title>Service Status</title>
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <style>
-            body {
+            body {{
                 font-family: Arial, sans-serif;
                 text-align: center;
                 padding: 50px;
                 background-color: #f5f5f5;
-            }
-            .container {
+            }}
+            .container {{
                 background-color: white;
                 padding: 30px;
                 border-radius: 10px;
                 box-shadow: 0 0 10px rgba(0,0,0,0.1);
                 display: inline-block;
-            }
-            h1 {
+            }}
+            h1 {{
                 color: #333;
-            }
-            .status {
+            }}
+            .status {{
                 font-size: 24px;
                 margin: 20px 0;
                 padding: 10px;
                 border-radius: 5px;
                 background-color: #4CAF50;
                 color: white;
-            }
-            .info {
+            }}
+            .info {{
                 margin: 10px 0;
                 color: #666;
-            }
+            }}
         </style>
     </head>
     <body>
@@ -160,8 +160,9 @@ def home():
         requests_served=uptime_cache['requests_served'],
         server_time=datetime.now().isoformat()
     )
-    
+
     return html_content
+
 
 def get_instagram_headers():
     cookie = cookie_manager.get_current_cookie()
