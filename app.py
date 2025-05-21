@@ -36,6 +36,7 @@ uptime_cache = {
 class CookieManager:
     def __init__(self):
         self.cookies = []
+        self.cookie_names = []
         self.current_index = 0
         self.load_cookies()
         logger.info(f"CookieManager initialized with {len(self.cookies)} cookies")
@@ -44,7 +45,15 @@ class CookieManager:
         # Load cookies from environment variables
         cookie_str = os.getenv("INSTAGRAM_COOKIES", "")
         if cookie_str:
-            self.cookies = [cookie.strip() for cookie in cookie_str.split("||")]
+            cookie_pairs = cookie_str.split("||")
+            for pair in cookie_pairs:
+                parts = pair.split("::")
+                if len(parts) == 2:
+                    self.cookie_names.append(parts[0].strip())
+                    self.cookies.append(parts[1].strip())
+                else:
+                    self.cookie_names.append(f"Cookie {len(self.cookies) + 1}")
+                    self.cookies.append(pair.strip())
             logger.info(f"Loaded {len(self.cookies)} cookies from environment")
         if not self.cookies:
             logger.warning("No Instagram cookies found in environment variables")
@@ -62,10 +71,15 @@ class CookieManager:
         else:
             logger.warning("Cannot rotate cookie: only one cookie available")
 
-    def add_cookie(self, cookie):
-        if cookie and cookie not in self.cookies:
-            self.cookies.append(cookie)
-            logger.info(f"Added new cookie. Total cookies now: {len(self.cookies)}")
+    def add_cookie(self, name, cookie):
+        if cookie:
+            name = name.strip() if name else f"Cookie {len(self.cookies) + 1}"
+            if cookie not in self.cookies:
+                self.cookie_names.append(name)
+                self.cookies.append(cookie)
+                logger.info(f"Added new cookie '{name}'. Total cookies now: {len(self.cookies)}")
+                return True
+        return False
 
 cookie_manager = CookieManager()
 
@@ -87,6 +101,65 @@ limiter = Limiter(
     storage_uri="memory://",
     strategy="fixed-window"  # More predictable for uptime checks
 )
+
+@app.route('/')
+def home():
+    """Simple uptime page for monitoring"""
+    uptime_cache['last_check'] = datetime.now().isoformat()
+    uptime_cache['requests_served'] = uptime_cache.get('requests_served', 0) + 1
+    
+    return """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Service Status</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <style>
+            body {
+                font-family: Arial, sans-serif;
+                text-align: center;
+                padding: 50px;
+                background-color: #f5f5f5;
+            }
+            .container {
+                background-color: white;
+                padding: 30px;
+                border-radius: 10px;
+                box-shadow: 0 0 10px rgba(0,0,0,0.1);
+                display: inline-block;
+            }
+            h1 {
+                color: #333;
+            }
+            .status {
+                font-size: 24px;
+                margin: 20px 0;
+                padding: 10px;
+                border-radius: 5px;
+                background-color: #4CAF50;
+                color: white;
+            }
+            .info {
+                margin: 10px 0;
+                color: #666;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>Service Status</h1>
+            <div class="status">ONLINE</div>
+            <div class="info">Last check: {}</div>
+            <div class="info">Requests served: {}</div>
+            <div class="info">Server time: {}</div>
+        </div>
+    </body>
+    </html>
+    """.format(
+        uptime_cache['last_check'],
+        uptime_cache['requests_served'],
+        datetime.now().isoformat()
+    )
 
 def get_instagram_headers():
     cookie = cookie_manager.get_current_cookie()
@@ -481,7 +554,9 @@ def api_instagram(username):
 @app.route("/cookies", methods=["GET", "POST"])
 def cookie_management():
     if request.method == "POST":
+        cookie_name = request.form.get("name", "").strip()
         new_cookie = request.form.get("cookie", "").strip()
+        
         if new_cookie:
             # Verify the cookie before adding
             headers = {
@@ -493,8 +568,10 @@ def cookie_management():
                 test_url = "https://www.instagram.com/api/v1/users/web_profile_info/?username=instagram"
                 response = requests.get(test_url, headers=headers, timeout=10)
                 if response.status_code == 200:
-                    cookie_manager.add_cookie(new_cookie)
-                    flash("Cookie added successfully and verified!", "success")
+                    if cookie_manager.add_cookie(cookie_name, new_cookie):
+                        flash(f"Cookie '{cookie_name}' added successfully and verified!", "success")
+                    else:
+                        flash("Cookie already exists", "warning")
                 else:
                     flash(f"Cookie verification failed (Status: {response.status_code})", "error")
             except Exception as e:
@@ -504,12 +581,14 @@ def cookie_management():
     
     # Get all cookies with their status
     cookies_info = []
-    for i, cookie in enumerate(cookie_manager.cookies):
+    for i, (name, cookie) in enumerate(zip(cookie_manager.cookie_names, cookie_manager.cookies)):
         is_active = i == cookie_manager.current_index
         cookies_info.append({
             "index": i,
-            "cookie": cookie,
-            "is_active": is_active
+            "name": name,
+            "cookie": cookie[:50] + "..." if len(cookie) > 50 else cookie,
+            "is_active": is_active,
+            "full_cookie": cookie
         })
     
     return render_template(
@@ -601,142 +680,6 @@ def uptime_check():
         "requests_served": uptime_cache['requests_served'],
         "server_time": datetime.now().isoformat()
     }), 200
-
-@app.route('/')
-def status_page():
-    """Enhanced status page with more information"""
-    # Update cache if this is a fresh request
-    if not uptime_cache['last_check']:
-        uptime_cache['last_check'] = datetime.now().isoformat()
-    
-    status_html = """
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>JihyoIG Status</title>
-        <meta name="viewport" content="width=device-width, initial-scale=1">
-        <style>
-            body {
-                font-family: Arial, sans-serif;
-                display: flex;
-                justify-content: center;
-                align-items: center;
-                min-height: 100vh;
-                margin: 0;
-                background-color: #f0f2f5;
-                color: #333;
-            }
-            .status-container {
-                text-align: center;
-                padding: 2rem;
-                background-color: white;
-                border-radius: 8px;
-                box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-                max-width: 600px;
-                width: 90%;
-            }
-            .status-indicator {
-                width: 20px;
-                height: 20px;
-                background-color: #4CAF50;
-                border-radius: 50%;
-                display: inline-block;
-                margin-right: 10px;
-                animation: pulse 2s infinite;
-            }
-            @keyframes pulse {
-                0% { opacity: 1; }
-                50% { opacity: 0.7; }
-                100% { opacity: 1; }
-            }
-            h1 {
-                color: #1a1a1a;
-                margin: 0 0 1rem 0;
-                font-size: 24px;
-            }
-            .status-info {
-                text-align: left;
-                margin: 1.5rem 0;
-                padding: 1rem;
-                background: #f8f9fa;
-                border-radius: 6px;
-            }
-            .status-info p {
-                margin: 0.5rem 0;
-                font-size: 14px;
-            }
-            .status-info strong {
-                display: inline-block;
-                width: 120px;
-            }
-            .uptime-link {
-                display: inline-block;
-                margin-top: 1rem;
-                padding: 0.5rem 1rem;
-                background: #4CAF50;
-                color: white;
-                text-decoration: none;
-                border-radius: 4px;
-                font-size: 14px;
-            }
-            .uptime-link:hover {
-                background: #3e8e41;
-            }
-        </style>
-    </head>
-    <body>
-        <div class="status-container">
-            <span class="status-indicator"></span>
-            <h1>JihyoIG Service Status</h1>
-            
-            <div class="status-info">
-                <p><strong>Current Status:</strong> <span id="status">Online</span></p>
-                <p><strong>Last Check:</strong> <span id="last-check">{last_check}</span></p>
-                <p><strong>Requests Served:</strong> <span id="requests-served">{requests_served}</span></p>
-                <p><strong>Server Time:</strong> <span id="server-time">{server_time}</span></p>
-            </div>
-            
-            <p>For uptime monitoring, use the dedicated endpoint below</p>
-            <a href="/uptime" class="uptime-link">Uptime Check Endpoint</a>
-        </div>
-        
-        <script>
-            function updateTimestamp() {
-                const now = new Date();
-                document.getElementById('server-time').textContent = now.toLocaleString();
-            }
-            
-            // Initial update
-            updateTimestamp();
-            
-            // Update every second
-            setInterval(updateTimestamp, 1000);
-            
-            // Update status from uptime endpoint periodically
-            function checkStatus() {
-                fetch('/uptime')
-                    .then(response => response.json())
-                    .then(data => {
-                        document.getElementById('last-check').textContent = data.last_check;
-                        document.getElementById('requests-served').textContent = data.requests_served;
-                    })
-                    .catch(error => {
-                        console.error('Status check failed:', error);
-                    });
-            }
-            
-            // Check every 30 seconds
-            setInterval(checkStatus, 30000);
-            checkStatus(); // Initial check
-        </script>
-    </body>
-    </html>
-    """.format(
-        last_check=uptime_cache['last_check'],
-        requests_served=uptime_cache.get('requests_served', 0),
-        server_time=datetime.now().isoformat()
-    )
-    return status_html
 
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=5000, debug=True)
